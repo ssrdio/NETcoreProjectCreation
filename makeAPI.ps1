@@ -26,6 +26,7 @@ if($tests)
 
 Copy-Item "..\..\NETcoreProjectCreation\nlog.config" -Destination ($name)
 Copy-Item "..\..\NETcoreProjectCreation\Startup.cs" -Destination ($name)
+Copy-Item "..\..\NETcoreProjectCreation\launchSettings.json" -Destination ($name+"/Properties/")
 
 Set-Location("..\..\")
 
@@ -39,6 +40,8 @@ dotnet add package NLog.Web.AspNetCore
 dotnet add package Swashbuckle.AspNetCore
 
 (Get-Content "Startup.cs") | ForEach-Object {$_ -replace "{PROJECT_NAME}", $name} | Set-Content "Startup.cs"
+$randomPort = Get-Random -Minimum 8080 -Maximum 50000
+(Get-Content "./Properties/launchSettings.json") | ForEach-Object {$_ -replace "{PORT}", $randomPort} | Set-Content "./Properties/launchSettings.json"
 
 $file = Get-Item ($name + ".csproj")
 $doc = [xml](Get-Content $file)
@@ -71,10 +74,6 @@ $doc.Project.AppendChild($ItemGroup)
 $doc.Save($file.FullName)
 
 Set-Location "../.."
-
-$lounchSettings = Get-Content ("src/" + $name + "/Properties/launchSettings.json") | Out-String | ConvertFrom-Json
-$port = $lounchSettings.profiles.$name.applicationUrl.Split(":")[-1]
-# $port = $lounchSettings.iisSettings.iisExpress.applicationUrl.Split(":")[-1]
 
 (Get-Content "Dockerfile") | ForEach-Object {$_ -replace "{PROJECT_NAME}", $name} | Set-Content "Dockerfile"
 (Get-Content "Makefile") | ForEach-Object {$_ -replace "{PROJECT_NAME}", $name.ToLower()} | Set-Content "Makefile"

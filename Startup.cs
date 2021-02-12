@@ -1,57 +1,96 @@
-﻿using System;
-using System.Reflection;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Swashbuckle.AspNetCore.Swagger;
-using NLog.Web;
-using NLog.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
+using System;
+using System.Net;
+using System.Net.Mime;
+using System.Text.Json;
+using System.Text;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Diagnostics;
+using System.IO;
+using System.Reflection;
 
 namespace {PROJECT_NAME}
 {
     public class Startup
     {
-        public Startup(IConfiguration configuration)
-        {
-            Configuration = configuration;
-        }
+        private readonly IConfiguration _configuration;
+        private readonly IWebHostEnvironment _webHostEnvironment;
 
-        public IConfiguration Configuration { get; }
+        public Startup(IConfiguration configuration, IWebHostEnvironment webHostEnvironment)
+        {
+            _configuration = configuration;
+            _webHostEnvironment = webHostEnvironment;
+        }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddControllersWithViews();
-            services.AddSwaggerGen(c =>
-            {
-                c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo  { Title = "test", Version = "v1" });
+            services.AddControllers();
 
-                string xmlPath = System.IO.Path.Combine(AppContext.BaseDirectory, $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml");
-                c.IncludeXmlComments(xmlPath);
-            });
+            if (_webHostEnvironment.IsDevelopment())
+            {
+                services.AddSwaggerGen(options =>
+                {
+                    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "{PROJECT_NAME}", Version = "v1" });
+
+                    string xmlFilePath = Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
+                    options.IncludeXmlComments(xmlFilePath, includeControllerXmlComments: true);
+                });
+            }
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app)
         {
-            if (env.IsDevelopment())
+            if (_webHostEnvironment.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
             }
-
-            app.UseSwagger();
-            app.UseSwaggerUI(c =>
+            else
             {
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "test V1");
-            });
+                app.UseExceptionHandler(error =>
+                {
+                    error.Run(async context =>
+                    {
+                        ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+                        ILogger logger = loggerFactory.CreateLogger("global_exception");
 
+                        IExceptionHandlerFeature exceptionFeature = context.Features.Get<IExceptionHandlerFeature>();
+                        if (exceptionFeature == null)
+                        {
+                            logger.LogError($"There was an exception but could not get the exception feature");
+                            return;
+                        }
+
+                        logger.LogError(exceptionFeature.Error, $"There was an error during request");
+
+                        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                        context.Response.ContentType = MediaTypeNames.Application.Json;
+                        await context.Response.WriteAsync(JsonSerializer.Serialize(new EmptyResult()), Encoding.UTF8);
+                    });
+                });
+            }
+
+            if (_webHostEnvironment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "{PROJECT_NAME} V1");
+                });
+            }
+
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
         }
     }
 }
